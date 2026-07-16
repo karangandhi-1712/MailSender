@@ -17,61 +17,73 @@ def load_env_file(path='.env'):
 
 load_env_file()
 
-# Configure API key from environment
 api_key = os.environ.get('GEMINI_API_KEY')
 if not api_key:
     raise ValueError('GEMINI_API_KEY is not set. Add it to .env or your environment.')
 genai.configure(api_key=api_key)
 
-# Use the recommended model for text generation
-model = genai.GenerativeModel('gemini-2.5-flash')
+model = genai.GenerativeModel('gemini-3.5-flash')
 
 INPUT_CSV = 'contacts.csv'
 OUTPUT_CSV = 'drafts.csv'
 
-# Optional personalization values
 CLUB_NAME = os.environ.get('CLUB_NAME', 'CodeChef VIT Chennai')
 SENDER_NAME = os.environ.get('SENDER_NAME', 'Karan Anand Gandhi')
 
-def generate_email(company, notes):
+
+def generate_email(name, email, notes):
     prompt = f"""
-    Write a concise, professional sponsorship email from {SENDER_NAME}, leader of {CLUB_NAME}, to {company}.
-    We are seeking sponsorship and promotion opportunities for our upcoming student club event.
-    Additional context about the company: {notes if notes else 'None'}.
-    
-    Format the output exactly as follows:
-    SUBJECT: [Proposed Subject Line]
-    BODY: [Email Body]
-    """
-    response = model.generate_content(prompt)
-    text = response.text
-    
+The sender is {SENDER_NAME}, leader of {CLUB_NAME}. Write a highly personalized, concise cold email pitching a sponsorship/collaboration opportunity.
+
+Recipient Details:
+- Name: {name}
+- Email: {email}
+- Raw Notes: {notes if notes else 'None'}
+
+Instructions:
+1. Deduction: Infer the recipient's Company, Position, and Industry/Domain strictly from the Email address domain and Raw Notes.
+2. Perspective: Write in an impersonal third-person style instead of the first person (e.g., "{CLUB_NAME} is exploring partnerships" rather than "I am writing to you").
+3. Hook: Acknowledge their inferred role and connect how the {CLUB_NAME} developer talent aligns with their company's work.
+4. Customization: Strictly incorporate any specific requests or financial amounts mentioned in the Raw Notes.
+5. Constraints: Maximum 150 words. Plain text only (no markdown, no emojis, no robotic tone).
+6. Call to Action: End with a low-friction ask for a brief chat.
+
+Format exactly:
+SUBJECT: [subject]
+BODY: [body]
+"""
     try:
-        # Parse the subject and body from the LLM output
+        response = model.generate_content(prompt)
+        text = response.text or ""
         subject = text.split("SUBJECT:")[1].split("BODY:")[0].strip()
         body = text.split("BODY:")[1].strip()
         return subject, body
-    except IndexError:
-        # Fallback if the LLM formatting fails
-        return "Sponsorship Opportunity", text.strip()
+    except Exception as e:
+        print(f"Error generating content: {e}")
+        subject = f"Sponsorship Opportunity with {CLUB_NAME}"
+        body = (
+            f"Hello {name},\n\n"
+            f"{CLUB_NAME} is reaching out to discuss a potential partnership.\n\n"
+            f"Regards,\n{SENDER_NAME}"
+        )
+        return subject, body
 
-# Read the input and generate the drafts
+
 with open(INPUT_CSV, mode='r', encoding='utf-8') as infile, \
      open(OUTPUT_CSV, mode='w', newline='', encoding='utf-8') as outfile:
-    
+
     reader = csv.DictReader(infile)
     writer = csv.writer(outfile)
-    
-    # Write the header for the output CSV
-    writer.writerow(["Company", "Email", "Subject", "Body"])
-    
+    writer.writerow(["Name", "Email", "Subject", "Body"])
+
     for row in reader:
-        company = row.get("Company", "")
-        email = row.get("Email", "")
-        notes = row.get("Notes", "")
-        
-        print(f"Generating draft for {company}...")
-        subject, body = generate_email(company, notes)
-        writer.writerow([company, email, subject, body])
+        name = row.get("name", "")
+        email = row.get("email", "")
+        notes = row.get("notes", "")
+
+        print(f"Generating draft for {name}...")
+        # Now passing email to allow domain inference
+        subject, body = generate_email(name, email, notes) 
+        writer.writerow([name, email, subject, body])
 
 print(f"\nDrafts saved to {OUTPUT_CSV}. Please review them before sending.")
